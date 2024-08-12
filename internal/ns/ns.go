@@ -75,7 +75,8 @@ func (ns *NS) Close() error {
 	if err != nil {
 		return err
 	}
-	return ns.connection.Drain()
+	ns.connection.Close()
+	return nil
 
 }
 

@@ -11,8 +11,7 @@ import (
 type Config struct {
 	Postgres PostgresConfig `env:",prefix=PSQL_" json:",omitempty"`
 	NS       NSConfig       `env:",prefix=NS_" json:",omitempty"`
-	//FTP      FTPConfig      `env:",prefix=FTP_" json:",omitempty"`
-
+	Web      WebConfig      `env:",prefix=WEB_" json:",omitempty"`
 }
 
 type PostgresConfig struct {
@@ -23,12 +22,16 @@ type PostgresConfig struct {
 	Password    string `env:"PASSWORD,default=123" json:",omitempty"`
 	SSLMode     string `env:"SSL_MODE,default=disable" json:",omitempty"`
 	ConnTimeout int    `env:"CONN_TIMEOUT,default=5" json:",omitempty"`
-	//DBTimeout   time.Duration `env:"TIMEOUT,default=5s"`
 }
 
 type NSConfig struct {
 	Host string `env:"HOST,default=localhost" json:",omitempty"`
 	Port int    `env:"PORT,default=4223" json:",omitempty"`
+}
+
+type WebConfig struct {
+	Host string `env:"HOST,default=localhost" json:",omitempty"`
+	Port int    `env:"PORT,default=8080" json:",omitempty"`
 }
 
 func (p PostgresConfig) ConnectionURL() (string, error) {
@@ -69,6 +72,10 @@ func (p PostgresConfig) ConnectionURL() (string, error) {
 
 func (ns NSConfig) ConnectionURL() string {
 	return fmt.Sprintf("%s:%d", ns.Host, ns.Port)
+}
+
+func (w WebConfig) ConnectionURL() string {
+	return fmt.Sprintf("%s:%d", w.Host, w.Port)
 }
 
 func Read(ctx context.Context) (*Config, error) {
