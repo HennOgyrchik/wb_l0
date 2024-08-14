@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"l0/internal/cache"
 	"l0/internal/config"
 	"l0/internal/ns"
 	"l0/internal/psql"
@@ -18,7 +19,7 @@ import (
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, nil)))
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 	defer stop()
 
 	cfg, err := config.Read(ctx)
@@ -50,7 +51,9 @@ func main() {
 		return
 	}
 
-	srv, err := service.New(ctx, nsConn, psqlConn)
+	cacheObj := cache.New()
+
+	srv, err := service.New(ctx, nsConn, psqlConn, cacheObj)
 	if err != nil {
 		slog.Error("Creating new service", "Error", err.Error())
 		return
@@ -58,16 +61,16 @@ func main() {
 
 	go func() {
 		for {
-			select {
-			case <-ctx.Done():
-				fmt.Println("Closing...")
-				err := srv.Stop()
-				if err != nil {
-					slog.Error("Closing app:", "Error", err.Error())
-				}
-				os.Exit(0)
 
+			<-ctx.Done()
+
+			fmt.Println("Closing...")
+			err := srv.Stop()
+			if err != nil {
+				slog.Error("Closing app:", "Error", err.Error())
 			}
+			os.Exit(0)
+
 		}
 	}()
 

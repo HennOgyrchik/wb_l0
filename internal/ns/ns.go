@@ -7,6 +7,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"l0/models"
+	"sync"
 	"time"
 )
 
@@ -141,26 +142,33 @@ func (ns *NS) PublishTestData() {
 
 }
 
-func (ns *NS) GetMessages(msgChan chan jetstream.Msg) error {
+func (ns *NS) GetMessages(ctx context.Context, wg *sync.WaitGroup, msgChan chan jetstream.Msg, errChan chan error) {
+	defer wg.Done()
 
 	iter, err := ns.consumer.Messages()
 	if err != nil {
-		return fmt.Errorf("NATS Streaming Messages: %w", err)
+		errChan <- fmt.Errorf("NATS Streaming Messages: %w", err)
+		return
 	}
 
 	for {
 		msg, err := iter.Next()
 		if err != nil {
-			return fmt.Errorf("NATS Streaming Next message: %w", err)
+			errChan <- fmt.Errorf("NATS Streaming Next message: %w", err)
+			return
 		}
 
 		select {
+		case <-ctx.Done():
+			return
 		case msgChan <- msg:
 			if err := msg.Ack(); err != nil {
-				return fmt.Errorf("NATS Streaming Ack: %w", err)
+				errChan <- fmt.Errorf("NATS Streaming Ack: %w", err)
+				return
 			}
 		default:
-			return fmt.Errorf("The channel is unavailable", nil)
+			errChan <- fmt.Errorf("The channel is unavailable")
+			return
 		}
 
 	}
