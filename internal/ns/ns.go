@@ -3,6 +3,7 @@ package ns
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -142,7 +143,7 @@ func (ns *NS) PublishTestData() {
 
 }
 
-func (ns *NS) GetMessages(ctx context.Context, wg *sync.WaitGroup, msgChan chan jetstream.Msg, errChan chan error) {
+func (ns *NS) RunMessageRead(ctx context.Context, wg *sync.WaitGroup, msgChan chan jetstream.Msg, errChan chan error) {
 	defer wg.Done()
 
 	iter, err := ns.consumer.Messages()
@@ -151,16 +152,25 @@ func (ns *NS) GetMessages(ctx context.Context, wg *sync.WaitGroup, msgChan chan 
 		return
 	}
 
+	go messageRead(iter, msgChan, errChan)
+
+	<-ctx.Done()
+	iter.Stop()
+
+}
+
+func messageRead(iter jetstream.MessagesContext, msgChan chan jetstream.Msg, errChan chan error) {
 	for {
 		msg, err := iter.Next()
-		if err != nil {
+		switch {
+		case errors.Is(err, jetstream.ErrMsgIteratorClosed):
+			return
+		case err != nil:
 			errChan <- fmt.Errorf("NATS Streaming Next message: %w", err)
 			return
 		}
 
 		select {
-		case <-ctx.Done():
-			return
 		case msgChan <- msg:
 			if err := msg.Ack(); err != nil {
 				errChan <- fmt.Errorf("NATS Streaming Ack: %w", err)

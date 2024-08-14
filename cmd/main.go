@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -45,11 +46,7 @@ func main() {
 		return
 	}
 
-	err = web.Start(cfg.Web.ConnectionURL())
-	if err != nil {
-		slog.Error("Starting web-server", "Error", err.Error())
-		return
-	}
+	webSrv := web.New(cfg.Web.ConnectionURL())
 
 	cacheObj := cache.New()
 
@@ -59,24 +56,31 @@ func main() {
 		return
 	}
 
-	go func() {
-		for {
+	var wg sync.WaitGroup
 
-			<-ctx.Done()
+	errChan := make(chan error)
+	defer close(errChan)
 
-			fmt.Println("Closing...")
-			err := srv.Stop()
-			if err != nil {
-				slog.Error("Closing app:", "Error", err.Error())
-			}
-			os.Exit(0)
+	wg.Add(1)
+	go srv.Start(ctx, &wg, errChan)
 
-		}
-	}()
+	wg.Add(1)
+	go webSrv.Start(ctx, srv, &wg, errChan)
 
-	err = srv.Start(ctx)
+	select {
+	case err := <-errChan:
+		slog.Error(err.Error())
+		stop()
+
+	case <-ctx.Done():
+
+	}
+
+	wg.Wait()
+	fmt.Println("Closing connections...")
+
+	err = srv.Stop()
 	if err != nil {
-		slog.Error("Starting service", "Error", err.Error())
-		return
+		slog.Error("Closing app:", "Error", err.Error())
 	}
 }

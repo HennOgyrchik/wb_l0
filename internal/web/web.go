@@ -1,36 +1,55 @@
 package web
 
 import (
+	"context"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"l0/internal/service"
+	"log/slog"
 	"net/http"
+	"sync"
+	"time"
 )
 
-func Start(url string) error {
+type Web struct {
+	connURL string
+}
+
+func New(url string) Web {
+	return Web{connURL: url}
+}
+func (w *Web) Start(ctx context.Context, srv *service.Service, wg *sync.WaitGroup, errChan chan error) {
+	defer wg.Done()
+
 	router := gin.Default()
+	gin.SetMode(gin.ReleaseMode)
+
 	router.LoadHTMLGlob("./internal/web/site/*")
 
-	router.GET("/order", Test)
-	router.GET("/", home)
+	router.GET("/order", srv.GetOrderInfoHandler)
+	router.GET("/", indexPage)
 
-	err := router.Run(url)
-	if err != nil {
-		return fmt.Errorf("Start gin router", err)
+	server := &http.Server{Addr: w.connURL, Handler: router.Handler()}
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errChan <- fmt.Errorf("Start web server: %w", err)
+			return
+		}
+	}()
+
+	<-ctx.Done()
+
+	ctxSrv, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctxSrv); err != nil {
+		slog.Error("Web server was shutdown incorrectly", "Error", err.Error())
+		return
 	}
-
-	return nil
 }
 
-func Test(c *gin.Context) {
-	orderUid := c.Request.FormValue("uid")
-
-	if orderUid == "" {
-		home(c)
-	}
-
-}
-
-func home(c *gin.Context) {
+func indexPage(c *gin.Context) {
 	c.HTML(http.StatusOK, "index.html", gin.H{
 		"title": "my friend",
 	})

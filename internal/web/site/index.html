@@ -1,11 +1,25 @@
 <html>
+<head>
+    <title>L0</title></head>
 <body>
-<h1>Hello, {{ .title }}!</h1>
+<h1>Hello!</h1>
 <form>
 <label>UID заказа:
     <input type="text" name="uid">
 </label>
 <button formaction="/order">Найти</button>
 </form>
+<pre id="myText"></pre>
+
+<script>
+    var data = {{.result}};
+
+    if (data != null){
+        document.getElementById("myText").innerHTML = JSON.stringify(data, null, 4);
+    }
+
+
+</script>
+
 </body>
 </html>
