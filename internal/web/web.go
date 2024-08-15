@@ -27,6 +27,7 @@ func (w *Web) Start(ctx context.Context, srv *service.Service, wg *sync.WaitGrou
 	router.LoadHTMLGlob("./internal/web/site/*")
 
 	router.GET("/order", srv.GetOrderInfoHandler)
+	router.PUT("/publish", srv.PublishData)
 	router.GET("/", indexPage)
 
 	server := &http.Server{Addr: w.connURL, Handler: router.Handler()}

@@ -38,7 +38,7 @@ func (p *PSQL) InsertOne(ctx context.Context, orderUid string, data []byte) (err
 
 	_, err = p.db.Exec(ctx, "insert into orders (order_id,data) values ($1,$2)", orderUid, data)
 	if err != nil {
-		err = fmt.Errorf("Insert one", err)
+		err = fmt.Errorf("Insert one: %w", err)
 	}
 	return err
 }

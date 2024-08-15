@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"l0/internal/ns"
 	"l0/internal/psql"
 	"l0/models"
+	"log/slog"
 	"net/http"
 	"sync"
 )
@@ -23,7 +25,7 @@ type Service struct {
 func New(ctx context.Context, nats *ns.NS, psql *psql.PSQL, cache *cache.Cache) (*Service, error) {
 	orders, err := psql.GetOrders(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("Reading DB", err)
+		return nil, fmt.Errorf("Reading DB: %w", err)
 	}
 	cache.Fill(orders)
 
@@ -39,7 +41,6 @@ func (s *Service) Start(ctx context.Context, wg *sync.WaitGroup, errChan chan er
 	var srvWG sync.WaitGroup
 
 	msgChan := make(chan jetstream.Msg)
-	defer close(msgChan)
 
 	defer srvWG.Wait()
 
@@ -72,29 +73,29 @@ func (s *Service) msgChanListener(ctx context.Context, wg *sync.WaitGroup, msgCh
 				return
 			}
 			listenerWG.Add(1)
-			go s.recordData(ctx, msg, errChan, &listenerWG)
-
+			go s.recordData(ctx, msg, &listenerWG)
 		}
 	}
-
 }
 
-func (s *Service) recordData(ctx context.Context, msg jetstream.Msg, errChan chan error, wg *sync.WaitGroup) {
+func (s *Service) recordData(ctx context.Context, msg jetstream.Msg, wg *sync.WaitGroup) {
 	defer wg.Done()
 	var order models.Order
 
-	err := json.Unmarshal(msg.Data(), &order)
-	if err != nil {
-		errChan <- fmt.Errorf("Unmarshalling data: %w", err)
+	dec := json.NewDecoder(bytes.NewReader(msg.Data()))
+	dec.DisallowUnknownFields()
+
+	if err := dec.Decode(&order); err != nil {
+		slog.Info("Invalid JSON:", "JSON", msg.Data())
+		return
+	}
+
+	if err := s.psql.InsertOne(ctx, order.OrderUid, msg.Data()); err != nil {
+		slog.Info("Invalid data:", "data", msg.Data())
 		return
 	}
 
 	s.cache.Fill([]models.Order{order})
-
-	if err = s.psql.InsertOne(ctx, order.OrderUid, msg.Data()); err != nil {
-		errChan <- fmt.Errorf("Inserting into DB", err)
-	}
-
 }
 
 func (s *Service) Stop() error {
@@ -119,4 +120,27 @@ func (s *Service) GetOrderInfoHandler(c *gin.Context) {
 	}
 
 	c.HTML(http.StatusOK, "index.html", result)
+}
+
+func (s *Service) PublishData(c *gin.Context) {
+	data := make(map[string]interface{})
+
+	err := c.BindJSON(&data)
+	if err != nil {
+		slog.Info("Binding JSON", "Error", err.Error())
+		c.JSON(http.StatusBadRequest, struct {
+			Error string
+		}{err.Error()})
+		return
+	}
+
+	err = s.nats.PublishData(data)
+	if err != nil {
+		slog.Info("Publish data", "Error", err.Error())
+		c.JSON(http.StatusBadRequest, struct {
+			Error string
+		}{err.Error()})
+		return
+	}
+
 }

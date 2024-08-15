@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
-	"l0/models"
 	"sync"
 	"time"
 )
@@ -24,7 +23,6 @@ func New(ctx context.Context, url string) (*NS, error) {
 	if err != nil {
 		return nil, err
 	}
-	//defer nc.Drain()
 
 	js, _ := jetstream.New(nc)
 
@@ -54,13 +52,6 @@ func New(ctx context.Context, url string) (*NS, error) {
 	}
 	cancel()
 
-	//defer stream.DeleteConsumer(ctx, "processor-1")
-
-	//msgs, _ := cons.Fetch(1)
-	//for msg := range msgs.Messages() {
-	//	fmt.Printf("data: %s\n", msg.Data())
-	//	msg.Ack()
-	//}
 	return &NS{
 		connection: nc,
 		stream:     stream,
@@ -82,64 +73,16 @@ func (ns *NS) Close() error {
 
 }
 
-func (ns *NS) PublishTestData() {
-	order1 := models.Order{
-		OrderUid:    "b563feb7b2b84b6test",
-		TrackNumber: "WBILMTESTTRACK",
-		Entry:       "WBIL",
-		Delivery: models.Delivery{
-			Name:    "Test Testov",
-			Phone:   "+9720000000",
-			Zip:     "2639809",
-			City:    "Kiryat Mozkin",
-			Address: "Ploshad Mira 15",
-			Region:  "Kraiot",
-			Email:   "test@gmail.com",
-		},
-		Payment: models.Payment{
-			Transaction:  "b563feb7b2b84b6test",
-			RequestId:    "",
-			Currency:     "USD",
-			Provider:     "wbpay",
-			Amount:       1817,
-			PaymentDt:    1637907727,
-			Bank:         "alpha",
-			DeliveryCost: 1500,
-			GoodsTotal:   317,
-			CustomFee:    0,
-		},
-		Items: []models.Item{{
-			ChrtId:      9934930,
-			TrackNumber: "WBILMTESTTRACK",
-			Price:       453,
-			Rid:         "ab4219087a764ae0btest",
-			Name:        "Mascaras",
-			Sale:        30,
-			Size:        "0",
-			TotalPrice:  317,
-			NmId:        2389212,
-			Brand:       "Vivienne Sabo",
-			Status:      202,
-		}},
-		Locale:            "en",
-		InternalSignature: "",
-		CustomerId:        "test",
-		DeliveryService:   "meest",
-		Shardkey:          "9",
-		SmId:              99,
-		DateCreated:       "2021-11-26T06:22:19Z",
-		OofShard:          "1",
-	}
-	order1byte, err := json.Marshal(order1)
+func (ns *NS) PublishData(data any) error {
+	orderByte, err := json.Marshal(data)
 	if err != nil {
-		fmt.Println("Order1JSON:", err)
-		return
+		return fmt.Errorf("JSON Marshal:", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	ns.js.Publish(ctx, "events.orders.b563feb7b2b84b6test", order1byte)
-	fmt.Println("Отправил в очередь")
+	_, err = ns.js.Publish(ctx, "events.orders.b563feb7b2b84b6test", orderByte)
+	return err
 
 }
 
@@ -160,6 +103,7 @@ func (ns *NS) RunMessageRead(ctx context.Context, wg *sync.WaitGroup, msgChan ch
 }
 
 func messageRead(iter jetstream.MessagesContext, msgChan chan jetstream.Msg, errChan chan error) {
+	defer close(msgChan)
 	for {
 		msg, err := iter.Next()
 		switch {
@@ -170,16 +114,11 @@ func messageRead(iter jetstream.MessagesContext, msgChan chan jetstream.Msg, err
 			return
 		}
 
-		select {
-		case msgChan <- msg:
-			if err := msg.Ack(); err != nil {
-				errChan <- fmt.Errorf("NATS Streaming Ack: %w", err)
-				return
-			}
-		default:
-			errChan <- fmt.Errorf("The channel is unavailable")
+		msgChan <- msg
+
+		if err := msg.Ack(); err != nil {
+			errChan <- fmt.Errorf("NATS Streaming Ack: %w", err)
 			return
 		}
-
 	}
 }

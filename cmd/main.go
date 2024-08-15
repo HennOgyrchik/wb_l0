@@ -23,33 +23,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 	defer stop()
 
-	cfg, err := config.Read(ctx)
+	nsConn, psqlConn, webSrv, cacheObj, err := prepare(ctx)
 	if err != nil {
-		slog.Error("Reading configuration", "Error", err.Error())
+		slog.Error("Prepare connections", "Error", err.Error())
 		return
 	}
-
-	nsConn, err := ns.New(ctx, cfg.NS.ConnectionURL())
-	if err != nil {
-		slog.Error("Connecting NATS Streaming", "Error", err.Error())
-		return
-	}
-
-	psqlConnURL, err := cfg.Postgres.ConnectionURL()
-	if err != nil {
-		slog.Error("Getting PSQL Connection URL", "Error", err.Error())
-		return
-	}
-	psqlConn, err := psql.New(ctx, psqlConnURL, time.Second*time.Duration(cfg.Postgres.ConnTimeout))
-	if err != nil {
-		slog.Error("Connecting PSQL", "Error", err.Error())
-		return
-	}
-
-	webSrv := web.New(cfg.Web.ConnectionURL())
-
-	cacheObj := cache.New()
-
 	srv, err := service.New(ctx, nsConn, psqlConn, cacheObj)
 	if err != nil {
 		slog.Error("Creating new service", "Error", err.Error())
@@ -70,8 +48,8 @@ func main() {
 	select {
 	case err := <-errChan:
 		slog.Error(err.Error())
+		fmt.Println("Стопаю")
 		stop()
-
 	case <-ctx.Done():
 
 	}
@@ -83,4 +61,35 @@ func main() {
 	if err != nil {
 		slog.Error("Closing app:", "Error", err.Error())
 	}
+}
+
+func prepare(ctx context.Context) (nsConn *ns.NS, psqlConn *psql.PSQL, webSrv web.Web, cacheObj *cache.Cache, err error) {
+	cfg, err := config.Read(ctx)
+	if err != nil {
+		err = fmt.Errorf("Reading configuration: %w", err)
+		return
+	}
+
+	nsConn, err = ns.New(ctx, cfg.NS.ConnectionURL())
+	if err != nil {
+		err = fmt.Errorf("Connecting NATS Streaming: %w", err)
+		return
+	}
+
+	psqlConnURL, err := cfg.Postgres.ConnectionURL()
+	if err != nil {
+		err = fmt.Errorf("Getting PSQL Connection URL: %w", err)
+		return
+	}
+	psqlConn, err = psql.New(ctx, psqlConnURL, time.Second*time.Duration(cfg.Postgres.ConnTimeout))
+	if err != nil {
+		err = fmt.Errorf("Connecting PSQL: %w", err)
+		return
+	}
+
+	webSrv = web.New(cfg.Web.ConnectionURL())
+
+	cacheObj = cache.New()
+
+	return
 }

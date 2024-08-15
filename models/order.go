@@ -1,7 +1,7 @@
 package models
 
 type Order struct {
-	OrderUid          string   `json:"order_uid"`
+	OrderUid          string   `json:"order_uid" binding:"required"`
 	TrackNumber       string   `json:"track_number"`
 	Entry             string   `json:"entry"`
 	Delivery          Delivery `json:"delivery"`
